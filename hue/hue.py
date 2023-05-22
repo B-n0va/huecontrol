@@ -1,10 +1,60 @@
 import requests
-import json
-import tkinter as tk
-from tkinter import ttk
+import socket
+import struct
+import sys
+from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QComboBox, QLabel, QListView, QListWidgetItem, QListWidget
+from PyQt5.QtCore import Qt
 
-API_KEY = "MxEIabwJX75Cjepjds3mO0G0ppTkmBnYhbjL-ItF"
-BRIDGE_IP = "192.168.0.243"
+# Function to convert an IP address to a numeric value
+def ip2int(ip):
+    packedIP = socket.inet_aton(ip)
+    return struct.unpack("!L", packedIP)[0]
+
+# Function to calculate the 'distance' between two IP addresses
+def ip_distance(ip1, ip2):
+    return abs(ip2int(ip1) - ip2int(ip2))
+
+def discover_bridge_ip():
+    response = requests.get("https://discovery.meethue.com")
+    bridge_data = response.json()
+
+    if len(bridge_data) > 0:
+        return bridge_data[0]["internalipaddress"]
+    else:
+        return None
+
+# IP addresses and respective keys
+IP_Key = {
+    # B
+    "192.168.0.243": "MxEIabwJX75Cjepjds3mO0G0ppTkmBnYhbjL-ItF",
+    # J
+    "192.168.178.20": "HEZt6IcW8sSVSzB293OLrzvqPxv0Fk94S-uDXK8b"
+}
+
+# Discover bridge IP
+BRIDGE_IP = discover_bridge_ip()
+
+# If bridge IP is discovered, calculate distances and assign key
+if BRIDGE_IP is not None:
+    # Calculate distances
+    distances = {ip: ip_distance(BRIDGE_IP, ip) for ip in IP_Key.keys()}
+
+    # Get IP with minimal distance
+    closest_IP = min(distances, key=distances.get)
+
+    # Assign respective key
+    API_KEY = IP_Key[closest_IP]
+
+    print(f"Discovered IP: {BRIDGE_IP}\nClosest IP: {closest_IP}\nAssigned API_KEY: {API_KEY}")
+
+else:
+    print("No bridge IP discovered")
+    # Default values if no bridge IP is discovered
+    BRIDGE_IP = "192.168.0.243"
+    API_KEY = IP_Key[BRIDGE_IP]
+
+# API_KEY = "MxEIabwJX75Cjepjds3mO0G0ppTkmBnYhbjL-ItF"
+# BRIDGE_IP = "192.168.0.243"
 
 COLORS = {
     "red": {"hue": 0, "sat": 254},
@@ -63,124 +113,66 @@ def set_light_brightness(light_id, brightness):
     state = {"bri": brightness}
     return set_light_state(light_id, state)
 
-def main():
-    rooms = get_rooms()
-    devices = get_devices()
 
-    while True:
-        print("Rooms:")
-        for room_id, room in rooms.items():
-            print(f"{room_id}: {room['name']}")
-
-        room_id = input("Select a room (or type 'exit' to quit): ")
-        if room_id == 'exit':
-            break
-        elif room_id not in rooms:
-            print("Invalid room ID.")
-            continue
-
-        print(f"\nDevices in {rooms[room_id]['name']} room:")
-        room_devices = rooms[room_id]['lights']
-        for device_id in room_devices:
-            print(f"{device_id}: {devices[device_id]['name']}")
-
-        device_id = None  # Set to None initially
-        while True:
-            print("\nCommands:")
-            print("1. Turn on/off")
-            print("2. Set color")
-            print("3. Set brightness")
-            print("4. Set all lights in room")
-            print("5. Select another device")
-            print("6. Select another room")
-
-            command = input("Select a command (1-6): ")
-            if command not in ("1", "2", "3", "4", "5", "6"):
-                print("Invalid command.")
-                continue
-            elif command == "1":
-                if device_id is not None:
-                    on = input("Turn on (Y/N): ").upper() == "Y"
-                    turn_light_on_or_off(device_id, on)
-                else:
-                    print("No device selected.")
-            elif command == "2":
-                if device_id is not None:
-                    color = input("Color (red, orange, yellow, green, blue, purple, pink): ")
-                    set_light_color(device_id, color)
-                else:
-                    print("No device selected.")
-            elif command == "3":
-                if device_id is not None:
-                    brightness = int(input("Brightness (0-255): "))
-                    set_light_brightness(device_id, brightness)
-                else:
-                    print("No device selected.")
-            elif command == "4":
-                state = {}
-                on = input("Turn on all lights (Y/N): ").upper() == "Y"
-                state['on'] = on
-                color = input("Color (red, orange, yellow, green, blue, purple, pink): ")
-                if color in COLORS:
-                    hue = COLORS[color]["hue"]
-                    sat = COLORS[color]["sat"]
-                    state['hue'] = hue
-                    state['sat'] = sat
-                else:
-                    print("Invalid color name.")
-                brightness = int(input("Brightness (0-255): "))
-                state['bri'] = brightness
-                set_room_state(room_id, state)
-                device_id = None  # Set to None after influencing all lights in a room
-            elif command == "5":
-                device_id = input("Select a device: ")
-                if device_id not in room_devices:
-                    print("Invalid device ID.")
-                    device_id = None
-                    
-            elif command == "6":
-                break
-
-
-class HueControllerApp(tk.Tk):
+class HueControllerInterface(QWidget):
     def __init__(self):
         super().__init__()
 
-        self.title("Hue Controller")
-        self.geometry("500x300")
+        self.initUI()
 
-        # Create and grid the main container
-        main_frame = ttk.Frame(self)
-        main_frame.grid(column=0, row=0, padx=10, pady=10)
+    def initUI(self):
+        self.layout = QVBoxLayout()
 
-        # Create and grid the color buttons
-        self.color_buttons = {}
-        for idx, (color, _) in enumerate(COLORS.items()):
-            button = ttk.Button(main_frame, text=color.capitalize(), command=lambda col=color: self.set_color(col))
-            button.grid(column=idx % 3, row=idx // 3, padx=5, pady=5)
-            self.color_buttons[color] = button
+        self.room_label = QLabel('Select Room')
+        self.room_combobox = QComboBox()
 
-        # Create and grid the brightness scale
-        self.brightness_scale = ttk.Scale(main_frame, from_=0, to=255, orient='horizontal', command=self.set_brightness)
-        self.brightness_scale.grid(column=3, row=0, rowspan=3, padx=10)
+        self.device_label = QLabel('Devices in selected room')
+        self.device_list = QListWidget()
 
-        # Create and grid the on/off button
-        self.on_off_button = ttk.Button(main_frame, text="On/Off", command=self.toggle_on_off)
-        self.on_off_button.grid(column=4, row=1, padx=5, pady=5)
+        self.layout.addWidget(self.room_label)
+        self.layout.addWidget(self.room_combobox)
 
-    def set_color(self, color):
-        # Add code here to set the color using your existing function
-        print(f"Setting color: {color}")
+        self.layout.addWidget(self.device_label)
+        self.layout.addWidget(self.device_list)
 
-    def set_brightness(self, brightness):
-        # Add code here to set the brightness using your existing function
-        print(f"Setting brightness: {brightness}")
+        self.setLayout(self.layout)
 
-    def toggle_on_off(self):
-        # Add code here to toggle the light on or off using your existing function
-        print("Toggling on/off")
+        self.room_combobox.currentIndexChanged.connect(self.update_device_list)
+
+    def populate_room_list(self, rooms):
+        for room_id, room in rooms.items():
+            self.room_combobox.addItem(room['name'], room_id)
+
+    def update_device_list(self, index):
+        selected_room_id = self.room_combobox.itemData(index)
+        devices = self.get_devices_in_room(selected_room_id)
+        self.device_list.clear()
+        for device_id, device_name in devices.items():
+            self.device_list.addItem(QListWidgetItem(device_name))
+
+    def get_rooms(self):
+        return get_rooms()
+    
+
+    def get_devices_in_room(self, room_id):
+        return get_devices(room_id)
+        
+
+def main():
+    global BRIDGE_IP
+    discovered_ip = discover_bridge_ip()
+
+    if discovered_ip is not None:
+        BRIDGE_IP = discovered_ip
+    else:
+        print("Could not find Hue Bridge on the network.")
+        BRIDGE_IP = "192.168.0.243"
+
+    app = QApplication(sys.argv)
+    hue_controller_interface = HueControllerInterface()
+    hue_controller_interface.populate_room_list(get_rooms())
+    hue_controller_interface.show()
+    sys.exit(app.exec_())
 
 if __name__ == "__main__":
-    app = HueControllerApp()
-    app.mainloop()
-
+    main()
