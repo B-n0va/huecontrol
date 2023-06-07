@@ -105,7 +105,14 @@ def get_devices(room_id):
     device_names = {id: device['name'] for id, device in devices.items()}
     return device_names
 
+def get_scenes():
+    response = requests.get(get_hue_bridge_url(API_KEY) + "/scenes")
+    return response.json()
 
+def set_scene(group_id, scene_id):
+    url = get_hue_bridge_url(API_KEY) + f"/groups/{group_id}/action"
+    response = requests.put(url, json={"scene": scene_id})
+    return response.json()
 
 def set_light_state(light_id, state):
     url = get_hue_bridge_url(API_KEY) + f"/lights/{light_id}/state"
@@ -157,12 +164,14 @@ class HueControllerInterface(QWidget):
         self.room_combobox = QComboBox()
         self.device_label = QLabel('Devices in selected room')
         self.device_list = QListWidget()
+        self.scene_label = QLabel('Scenes')
+        self.scene_combobox = QComboBox()
+
 
         self.master_on_off_button = QPushButton("Master")
         self.on_button = QPushButton("On")
         self.off_button = QPushButton("Off")
-        self.red_button = QPushButton("Red")
-        self.green_button = QPushButton("Green")  # add more color buttons here
+        self.scene_button = QPushButton("Apply Scene")
         self.brightness_slider = QSlider(Qt.Horizontal)
         self.brightness_slider.setMaximum(255)  # Hue brightness ranges from 0-255
         self.brightness_slider.setMinimum(0)
@@ -175,8 +184,8 @@ class HueControllerInterface(QWidget):
         self.layout.addWidget(self.master_on_off_button)
         self.layout.addWidget(self.on_button)
         self.layout.addWidget(self.off_button)
-        self.layout.addWidget(self.red_button)
-        self.layout.addWidget(self.green_button)
+        self.layout.addWidget(self.scene_label)
+        self.layout.addWidget(self.scene_combobox)
         self.layout.addWidget(self.brightness_slider)
 
         self.setLayout(self.layout)
@@ -185,16 +194,13 @@ class HueControllerInterface(QWidget):
         self.master_on_off_button.clicked.connect(self.master_on_off)
         self.on_button.clicked.connect(self.turn_selected_lights_on)
         self.off_button.clicked.connect(self.turn_selected_lights_off)
-        self.red_button.clicked.connect(lambda: self.set_all_lights_color("red"))
-        self.green_button.clicked.connect(lambda: self.set_all_lights_color("green"))  # update these for all color buttons
+        self.scene_button.clicked.connect(self.apply_selected_scene)
         self.brightness_slider.valueChanged.connect(self.set_all_lights_brightness)
         self.device_list.setSelectionMode(QAbstractItemView.MultiSelection)
-
 
     def populate_room_list(self, rooms):
         for room_id, room in rooms.items():
             self.room_combobox.addItem(room['name'], room_id)
-
 
     def update_device_list(self, index):
         self.device_list.clear()
@@ -208,8 +214,9 @@ class HueControllerInterface(QWidget):
         else:
             print("No devices found in selected room")
 
-
-
+    def populate_scene_list(self, scenes):
+        for scene_id, scene in scenes.items():
+            self.scene_combobox.addItem(scene['name'], scene_id)
 
     def get_rooms(self):
         return get_rooms()
@@ -225,10 +232,6 @@ class HueControllerInterface(QWidget):
             print(f"No devices found in room with id: {room_id}")
             return {}
 
-
-
-
-    
     def master_on_off(self):
         rooms = self.get_rooms()
         for room in rooms.values():
@@ -236,7 +239,6 @@ class HueControllerInterface(QWidget):
                 turn_light_on_or_off(device_id, self.all_lights_on)
         self.all_lights_on = not self.all_lights_on
             
-
     def turn_selected_lights_on(self):
         selected_device_ids = self.get_selected_device_ids()
         rooms = self.get_rooms()
@@ -286,6 +288,10 @@ class HueControllerInterface(QWidget):
         if device_id is not None:
             set_light_brightness(device_id, brightness)
 
+    def apply_selected_scene(self):
+        selected_scene_id = self.scene_combobox.currentData()
+        set_scene('0', selected_scene_id)
+
     def get_selected_device_ids(self):
         selected_devices = self.device_list.selectedItems()
         if selected_devices:
@@ -293,7 +299,7 @@ class HueControllerInterface(QWidget):
         else:
             print("No devices selected, applying action to all devices.")
             return None
-
+    
 
 
     
